@@ -1,5 +1,4 @@
 //! Procedural macro crate for `#[command]`.
-//!
 //! Use through the `wry_cmd` crate unless you're building custom tools.
 
 extern crate inflector;
@@ -13,12 +12,12 @@ use syn::{
 };
 
 /// Marks a function as a Wry IPC command.
-/// The function must take a single argument implementing `Deserialize` and return a type implementing `Serialize`.
-/// `#[command(name = "...")]` or just `#[command]`.
-/// Registers a single fn under the given name (or fn name if omitted).
+/// The function can take zero or one argument implementing `Deserialize`
+/// and return a type implementing `Serialize`. If omitted, no args or no return are supported.
+/// Use `#[command(name = "...")]` or just `#[command]`.
 #[proc_macro_attribute]
 pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
-    // 0. Parse optional `name = "..."` from attribute
+    // Parse optional `name = "..."` from attribute
     let args = parse_macro_input!(attr as AttributeArgs);
     let mut override_name: Option<LitStr> = None;
     for nested in args {
@@ -31,70 +30,100 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
-    // 1. Parse the function itself
+    // Parse the function
     let input_fn = parse_macro_input!(item as ItemFn);
     let fn_ident = &input_fn.sig.ident;
+
+    // Determine command name literal
     let default_name = fn_ident.to_string().to_lowercase();
     let name_lit = override_name.unwrap_or_else(|| LitStr::new(&default_name, fn_ident.span()));
 
-    // 2. Extract argument type or fall back to Value
-    let arg_ty: Type = input_fn
-        .sig
-        .inputs
-        .iter()
-        .filter_map(|arg| {
-            if let FnArg::Typed(PatType { ty, .. }) = arg {
-                Some((**ty).clone())
-            } else {
-                None
-            }
-        })
-        .next()
-        .unwrap_or_else(|| syn::parse_quote!(serde_json::Value));
+    // Determine if function has a typed argument (excluding receiver)
+    let mut has_arg = false;
+    let mut arg_ty: Type = syn::parse_quote!(serde_json::Value);
+    for input in &input_fn.sig.inputs {
+        if let FnArg::Typed(PatType { ty, .. }) = input {
+            has_arg = true;
+            arg_ty = (*ty.clone());
+            break;
+        }
+    }
 
-    // 3. Extract return type or default to ()
+    // Determine return type or default to `()`
+    let mut has_return = true;
     let ret_ty: Type = match &input_fn.sig.output {
-        ReturnType::Default => syn::parse_quote!(()),
+        ReturnType::Default => {
+            has_return = false;
+            syn::parse_quote!(())
+        }
         ReturnType::Type(_, ty) => (*ty.clone()),
     };
 
-    // 4. Detect async vs sync
+    // Detect async vs sync
     let is_async = input_fn.sig.asyncness.is_some();
 
-    // 5. Build the handler closure, importing FutureExt so .boxed() works
+    // Build the handler closure
     let handler = if is_async {
-        quote! {{
-            use ::wry_cmd::futures::future::FutureExt;
-            |args: ::serde_json::Value| {
-                async move {
-                    let args: #arg_ty = match ::serde_json::from_value(args) {
-                        Ok(v) => v,
-                        Err(e) => return Err(e.to_string()),
-                    };
-                    let ret = #fn_ident(args).await;
-                    ::serde_json::to_value(&ret).map_err(|e| e.to_string())
+        if has_arg {
+            quote! {{
+                use ::wry_cmd::futures::future::FutureExt;
+                |args: ::serde_json::Value| {
+                    async move {
+                        let args: #arg_ty = match ::serde_json::from_value(args) {
+                            Ok(v) => v,
+                            Err(e) => return Err(e.to_string()),
+                        };
+                        let ret = #fn_ident(args).await;
+                        ::serde_json::to_value(&ret).map_err(|e| e.to_string())
+                    }
+                    .boxed()
                 }
-                .boxed()
-            }
-        }}
+            }}
+        } else {
+            // no arguments
+            quote! {{
+                use ::wry_cmd::futures::future::FutureExt;
+                |_: ::serde_json::Value| {
+                    async move {
+                        let ret = #fn_ident().await;
+                        ::serde_json::to_value(&ret).map_err(|e| e.to_string())
+                    }
+                    .boxed()
+                }
+            }}
+        }
     } else {
-        quote! {{
-            use ::wry_cmd::futures::future::FutureExt;
-            |args: ::serde_json::Value| {
-                async move {
-                    let args: #arg_ty = match ::serde_json::from_value(args) {
-                        Ok(v) => v,
-                        Err(e) => return Err(e.to_string()),
-                    };
-                    let ret = #fn_ident(args);
-                    ::serde_json::to_value(&ret).map_err(|e| e.to_string())
+        if has_arg {
+            quote! {{
+                use ::wry_cmd::futures::future::FutureExt;
+                |args: ::serde_json::Value| {
+                    async move {
+                        let args: #arg_ty = match ::serde_json::from_value(args) {
+                            Ok(v) => v,
+                            Err(e) => return Err(e.to_string()),
+                        };
+                        let ret = #fn_ident(args);
+                        ::serde_json::to_value(&ret).map_err(|e| e.to_string())
+                    }
+                    .boxed()
                 }
-                .boxed()
-            }
-        }}
+            }}
+        } else {
+            // no arguments
+            quote! {{
+                use ::wry_cmd::futures::future::FutureExt;
+                |_: ::serde_json::Value| {
+                    async move {
+                        let ret = #fn_ident();
+                        ::serde_json::to_value(&ret).map_err(|e| e.to_string())
+                    }
+                    .boxed()
+                }
+            }}
+        }
     };
 
-    // 6. Emit user fn + inventory registration
+    // Emit the original function and inventory registration
     let expanded = quote! {
         #input_fn
 
@@ -109,93 +138,8 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 /// Attribute macro to auto-generate and register IPC commands from a trait impl.
-///
-/// Apply this to an `impl MyTrait for MyType { … }` block to turn each method into
-/// a free function annotated with `#[command(name = "traitname/method")]` and register
-/// it with the `wry_cmd` dispatcher.
-///
-/// # How it works
-///
-/// - **Trait name** is taken from the `impl MyTrait` header, lowercased.  
-/// - **Method names** come from each `fn` or `async fn` in the impl block.  
-/// - A wrapper function `__cmd_<trait>_<method>` is generated for each method:
-///   ```ignore
-///   #[command(name = "traitname/method")]
-///   async fn __cmd_traitname_method(args: ArgType) -> RetType { … }
-///   ```
-///   or, for sync:
-///   ```ignore
-///   #[command(name = "traitname/method")]
-///   fn __cmd_traitname_method(args: ArgType) -> RetType { … }
-///   ```
-/// - The generated wrapper delegates to a global `static INSTANCE: MyType`:
-///   ```ignore
-///   INSTANCE.method_name(args).await  // or without `.await` for sync
-///   ```
-///
-/// # Naming convention
-///
-/// Commands are exposed under the URL-style name:
-/// ```text
-///    protocol://traitname/method
-/// ```
-/// e.g. given `trait MyCommands` with method `greet`, the command key is `"mycommands/greet"`.
-///
-/// # Requirements
-///
-/// 1. Must be used on a **trait impl** block, e.g. `impl MyCommands for MyApp { … }`.  
-/// 2. A `static INSTANCE: MyApp = MyApp;` must be in scope for delegation.  
-/// 3. Each method must have exactly one typed argument (or none), and its argument type
-///    must implement `serde::Deserialize`.  
-/// 4. Each method’s return type must implement `serde::Serialize` (or return `Result<…, String>`).
-///
-/// # Supported method signatures
-///
-/// ```rust
-/// // sync
-/// fn foo(&self, args: FooArgs) -> FooReply { … }
-///
-/// // async
-/// async fn bar(&self, args: BarArgs) -> Result<BarReply, String> { … }
-/// ```
-///
-/// # Example
-///
-/// ```rust
-/// use serde::{Deserialize, Serialize};
-/// use wry_cmd::{command, use_wry_cmd_protocol};
-/// use wry_cmd_macro::commands;
-///
-/// #[derive(Deserialize)]
-/// pub struct GreetArgs { pub name: String }
-/// #[derive(Serialize)]
-/// pub struct GreetReply { pub message: String }
-///
-/// pub trait MyCommands {
-///     fn greet(&self, args: GreetArgs) -> GreetReply;
-///     async fn fetch(&self, args: String) -> Result<String, String>;
-/// }
-///
-/// struct MyApp;
-/// static INSTANCE: MyApp = MyApp;
-///
-/// #[commands]
-/// impl MyCommands for MyApp {
-///     fn greet(&self, args: GreetArgs) -> GreetReply {
-///         GreetReply { message: format!("Hello, {}!", args.name) }
-///     }
-///
-///     async fn fetch(&self, args: String) -> Result<String, String> {
-///         Ok(format!("Fetched: {}", args))
-///     }
-/// }
-///
-/// // In your wry setup:
-/// // .with_asynchronous_custom_protocol("mado".into(), use_wry_cmd_protocol!("mado"))
-/// ```
 #[proc_macro_attribute]
 pub fn commands(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    // 1. Parse the impl block
     let input_impl = parse_macro_input!(item as ItemImpl);
     let trait_path = input_impl
         .trait_
@@ -211,52 +155,60 @@ pub fn commands(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .to_string()
         .to_lowercase();
 
-    // 2. Generate one wrapper per method
     let mut wrappers = Vec::new();
     for item in &input_impl.items {
         if let ImplItem::Method(m) = item {
             let method_ident = &m.sig.ident;
-            // wrapper fn name: __cmd_<trait>_<method>
             let wrapper_ident = format_ident!("__cmd_{}_{}", trait_name, method_ident);
-
-            // command name: "trait/method"
             let cmd_name = format!("{}/{}", trait_name, method_ident);
 
-            // extract argument type or default to Value
-            let arg_ty: Type = m
-                .sig
-                .inputs
-                .iter()
-                .filter_map(|arg| {
-                    if let FnArg::Typed(PatType { ty, .. }) = arg {
-                        Some((**ty).clone())
-                    } else {
-                        None
-                    }
-                })
-                .next()
-                .unwrap_or_else(|| parse_quote!(serde_json::Value));
+            // detect arguments
+            let mut has_arg = false;
+            let mut arg_ty: Type = parse_quote!(serde_json::Value);
+            for input in &m.sig.inputs {
+                if let FnArg::Typed(PatType { ty, .. }) = input {
+                    has_arg = true;
+                    arg_ty = (*ty.clone());
+                    break;
+                }
+            }
 
-            // return type or ()
+            // detect return
             let ret_ty: Type = match &m.sig.output {
                 ReturnType::Default => parse_quote!(()),
                 ReturnType::Type(_, ty) => (*ty.clone()),
             };
 
-            // async vs sync
-            //println!("Generated Command {cmd_name}");
             let wrapper = if m.sig.asyncness.is_some() {
-                quote! {
-                    #[wry_cmd::command(name = #cmd_name)]
-                    async fn #wrapper_ident(args: #arg_ty) -> #ret_ty {
-                        INSTANCE.#method_ident(args).await
+                if has_arg {
+                    quote! {
+                        #[wry_cmd::command(name = #cmd_name)]
+                        async fn #wrapper_ident(args: #arg_ty) -> #ret_ty {
+                            INSTANCE.#method_ident(args).await
+                        }
+                    }
+                } else {
+                    quote! {
+                        #[wry_cmd::command(name = #cmd_name)]
+                        async fn #wrapper_ident() -> #ret_ty {
+                            INSTANCE.#method_ident().await
+                        }
                     }
                 }
             } else {
-                quote! {
-                    #[wry_cmd::command(name = #cmd_name)]
-                    fn #wrapper_ident(args: #arg_ty) -> #ret_ty {
-                        INSTANCE.#method_ident(args)
+                if has_arg {
+                    quote! {
+                        #[wry_cmd::command(name = #cmd_name)]
+                        fn #wrapper_ident(args: #arg_ty) -> #ret_ty {
+                            INSTANCE.#method_ident(args)
+                        }
+                    }
+                } else {
+                    quote! {
+                        #[wry_cmd::command(name = #cmd_name)]
+                        fn #wrapper_ident() -> #ret_ty {
+                            INSTANCE.#method_ident()
+                        }
                     }
                 }
             };
@@ -265,7 +217,6 @@ pub fn commands(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
-    // 3. Re-emit the impl plus all wrappers
     let expanded = quote! {
         #input_impl
         #(#wrappers)*
