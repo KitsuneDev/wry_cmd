@@ -64,7 +64,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     // 5. Build the handler closure, importing FutureExt so .boxed() works
     let handler = if is_async {
         quote! {{
-            use ::wry_cmd_core::futures::future::FutureExt;
+            use ::wry_cmd::futures::future::FutureExt;
             |args: ::serde_json::Value| {
                 async move {
                     let args: #arg_ty = match ::serde_json::from_value(args) {
@@ -79,7 +79,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         }}
     } else {
         quote! {{
-            use ::wry_cmd_core::futures::future::FutureExt;
+            use ::wry_cmd::futures::future::FutureExt;
             |args: ::serde_json::Value| {
                 async move {
                     let args: #arg_ty = match ::serde_json::from_value(args) {
@@ -98,8 +98,8 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input_fn
 
-        ::wry_cmd_core::inventory::submit! {
-            ::wry_cmd_core::Command {
+        ::wry_cmd::inventory::submit! {
+            ::wry_cmd::Command {
                 name: #name_lit,
                 handler: #handler
             }

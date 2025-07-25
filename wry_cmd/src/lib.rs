@@ -49,7 +49,4 @@
 //! ```
 pub use wry_cmd_core::*;
 #[cfg(feature = "macros")]
-pub use wry_cmd_macro::command;
-
-#[cfg(feature = "macros")]
-pub use wry_cmd_macro::commands;
+pub use wry_cmd_macro::*;
