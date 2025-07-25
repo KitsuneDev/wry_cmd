@@ -5,9 +5,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Tauri-style IPC command system for Wry apps using with_ipc_handler."
 documentation = "https://docs.rs/wry_cmd"
-repository = "https://github.com/yourname/wry_cmd"
-keywords = ["ipc", "wry", "tauri", "command"]
-categories = ["gui", "development-tools"]
+repository = "https://github.com/KitsuneDev/wry_cmd"
 readme = "README.md"
 
 [lib]
@@ -19,3 +17,4 @@ serde_json = "1.0"
 once_cell = "1.17"
 inventory = { version = "0.3.20" }
 futures = "0.3.31"
+percent-encoding = "2.3.1"

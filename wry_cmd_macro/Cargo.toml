@@ -4,10 +4,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Procedural macro for registering IPC commands in wry_cmd."
-documentation = "https://docs.rs/wry_cmd_macro"
-repository = "https://github.com/yourname/wry_cmd"
-keywords = ["proc-macro", "ipc", "wry", "command"]
-categories = ["gui", "development-tools"]
+documentation = "https://docs.rs/wry_cmd"
+repository = "https://github.com/KitsuneDev/wry_cmd"
 readme = "README.md"
 
 [lib]
@@ -20,4 +18,5 @@ syn = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 inventory = { version = "0.3.20" }
-wry_cmd_core = { path = "../wry_cmd_core" }
+wry_cmd_core = { path = "../wry_cmd_core", version = "0.1.0" }
+Inflector = "0.11.4"

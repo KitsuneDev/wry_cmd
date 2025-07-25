@@ -10,9 +10,9 @@
 pub extern crate inventory;
 
 pub use futures; // re-export futures for macro‐expansions
-
 use futures::{future::BoxFuture, FutureExt};
 use once_cell::sync::Lazy;
+use percent_encoding::percent_decode_str;
 use serde_json::Value;
 use std::collections::HashMap;
 /// Type alias for command handler functions.
@@ -28,16 +28,37 @@ pub struct Command {
 inventory::collect!(Command);
 
 /// Dispatch an IPC command by name with JSON arguments.
-/// Returns the serialized result or an error string.
-pub fn handle_command(cmd: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {
+/// Supports names like `"mycommands/greet"` or even `"/mycommands/greet"`
+/// and percent-encoded paths (e.g. `%2Fmycommands%2Fgreet`).
+pub fn handle_command(raw_cmd: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {
+    // 1) Normalize: strip leading/trailing slashes
+    let cmd = raw_cmd.trim_matches('/');
+
+    // 2) Percent-decode, falling back to the original if decoding fails
+    let cmd = percent_decode_str(cmd)
+        .decode_utf8()
+        .map(|cow| cow.to_string())
+        .unwrap_or_else(|_| cmd.to_string());
+
+    // 3) Lookup in the registry
     for cmd_def in inventory::iter::<Command> {
         if cmd_def.name == cmd {
-            // Call the handler (sync or async)
             return (cmd_def.handler)(args);
         }
     }
+
+    // 4) Unknown command
+    println!("Unknown command: {}", cmd);
+    println!(
+        "Available commands: {:?}",
+        inventory::iter::<Command>
+            .into_iter()
+            .map(|c| c.name)
+            .collect::<Vec<_>>()
+    );
     futures::future::ready(Err(format!("Unknown command: {}", cmd))).boxed()
 }
+
 #[macro_export]
 macro_rules! use_wry_cmd_protocol {
     ($scheme:expr) => {{
@@ -78,15 +99,26 @@ macro_rules! use_wry_cmd_protocol {
 
             // Extract command name from URI: "mado://greet" → "greet"
             let uri = request.uri();
-            let cmd = uri
-                .authority()
-                .map(|a| a.as_str().to_string())
-                .or_else(|| {
-                    uri.path_and_query()
-                        .map(|pq| pq.path().trim_start_matches('/').to_string())
-                })
-                .unwrap_or_default();
+            // 1. Extract host (authority) and path separately
+            let host = uri.authority().map(|a| a.as_str()).unwrap_or("");
+            let path = uri.path_and_query()
+                .map(|pq| pq.path())
+                .unwrap_or("");
 
+            // 2. Trim any leading slash on the path
+            let path = path.trim_start_matches('/');
+
+            // 3. Build the command name
+            let cmd = if host.is_empty() {
+                // no host, just path
+                path.to_string()
+            } else if path.is_empty() {
+                // host only
+                host.to_string()
+            } else {
+                // both host and path
+                format!("{}/{}", host, path)
+            };
             // Parse JSON args from body
             let args: Value = serde_json::from_slice(request.body()).unwrap_or_default();
 

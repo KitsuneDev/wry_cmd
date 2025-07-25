@@ -5,9 +5,9 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Facade crate combining wry_cmd_core (runtime) and wry_cmd_macro (IPC-command registration) for Wry."
 readme = "../README.md"
-repository = "https://github.com/yourname/wry_cmd"
+repository = "https://github.com/KitsuneDev/wry_cmd"
 documentation = "https://docs.rs/wry_cmd"
-homepage = "https://github.com/yourname/wry_cmd"
+homepage = "https://github.com/KitsuneDev/wry_cmd"
 keywords = ["ipc", "wry", "tauri", "command"]
 categories = ["gui", "development-tools"]
 
@@ -21,9 +21,7 @@ wry_cmd_macro = { version = "0.1.0", path = "../wry_cmd_macro", optional = true 
 default = ["macros"]
 macros = ["wry_cmd_macro"]
 
-[[example]]
-name = "wry-demo"
 
 [dev-dependencies]
-wry = { version = "*" }
-tao = { version = "*" }
+wry = { version = "0.52.1" }
+tao = { version = "0.34.0" }
