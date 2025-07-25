@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/KitsuneDev/wry_cmd/compare/wry_cmd_macro-v0.1.1...wry_cmd_macro-v0.1.2) - 2025-07-25
+
+### Other
+
+- 🐛 Fix Macro Exports
+
 ## [0.1.1](https://github.com/KitsuneDev/wry_cmd/compare/wry_cmd_macro-v0.1.0...wry_cmd_macro-v0.1.1) - 2025-07-25
 
 ### Other

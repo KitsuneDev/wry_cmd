@@ -1,6 +1,6 @@
 [package]
 name = "wry_cmd"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Facade crate combining wry_cmd_core (runtime) and wry_cmd_macro (IPC-command registration) for Wry."
@@ -15,7 +15,7 @@ categories = ["gui", "development-tools"]
 wry_cmd_core = { version = "0.1.1", path = "../wry_cmd_core" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-wry_cmd_macro = { version = "0.1.1", path = "../wry_cmd_macro", optional = true }
+wry_cmd_macro = { version = "0.1.2", path = "../wry_cmd_macro", optional = true }
 
 [features]
 default = ["macros"]
