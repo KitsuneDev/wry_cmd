@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/KitsuneDev/wry_cmd/compare/wry_cmd_macro-v0.1.2...wry_cmd_macro-v0.1.3) - 2025-07-25
+
+### Other
+
+- ✨ Allow functions with no args/no parameters
+
 ## [0.1.2](https://github.com/KitsuneDev/wry_cmd/compare/wry_cmd_macro-v0.1.1...wry_cmd_macro-v0.1.2) - 2025-07-25
 
 ### Other

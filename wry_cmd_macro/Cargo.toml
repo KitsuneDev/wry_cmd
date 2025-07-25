@@ -1,6 +1,6 @@
 [package]
 name = "wry_cmd_macro"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Procedural macro for registering IPC commands in wry_cmd."
