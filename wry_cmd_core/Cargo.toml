@@ -1,0 +1,21 @@
+[package]
+name = "wry_cmd_core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Tauri-style IPC command system for Wry apps using with_ipc_handler."
+documentation = "https://docs.rs/wry_cmd"
+repository = "https://github.com/yourname/wry_cmd"
+keywords = ["ipc", "wry", "tauri", "command"]
+categories = ["gui", "development-tools"]
+readme = "README.md"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+once_cell = "1.17"
+inventory = { version = "0.3.20" }
+futures = "0.3.31"

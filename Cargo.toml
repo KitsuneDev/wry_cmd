@@ -1,0 +1,3 @@
+[workspace]
+members = ["wry_cmd", "wry_cmd_macro"]
+resolver = "3"
