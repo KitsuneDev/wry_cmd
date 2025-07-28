@@ -7,8 +7,8 @@ use inflector::Inflector;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, parse_quote, AttributeArgs, FnArg, ImplItem, ItemFn, ItemImpl, Lit, LitStr,
-    Meta, NestedMeta, PatType, ReturnType, Type,
+    parse_macro_input, parse_quote, spanned::Spanned, AttributeArgs, FnArg, ImplItem, ItemFn,
+    ItemImpl, Lit, LitStr, Meta, NestedMeta, PatType, ReturnType, Type,
 };
 
 /// Marks a function as a Wry IPC command.
@@ -137,32 +137,71 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// Attribute macro to auto-generate and register IPC commands from a trait impl.
+/// Attribute macro to auto-generate and register IPC commands from an impl block.
+///
+/// Usage:
+/// ```rust
+/// // Trait impl – defaults to the trait name:
+/// #[commands]
+/// impl MyTrait for MyStruct { … }
+///
+/// // Inherent impl – defaults to the type name:
+/// #[commands]
+/// impl MyService { … }
+///
+/// // Override the service name:
+/// #[commands(service = "foo")]
+/// impl MyTrait for MyStruct { … }
+/// ```
 #[proc_macro_attribute]
-pub fn commands(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input_impl = parse_macro_input!(item as ItemImpl);
-    let trait_path = input_impl
-        .trait_
-        .as_ref()
-        .expect("`#[commands]` must be on a trait impl")
-        .1
-        .clone();
-    let trait_name = trait_path
-        .segments
-        .last()
-        .unwrap()
-        .ident
-        .to_string()
-        .to_lowercase();
+pub fn commands(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // 1. Parse optional `service = "..."` from attribute
+    let args = parse_macro_input!(attr as AttributeArgs);
+    let mut override_service: Option<LitStr> = None;
+    for nested in args {
+        if let NestedMeta::Meta(Meta::NameValue(nv)) = nested {
+            if nv.path.is_ident("service") {
+                match nv.lit {
+                    Lit::Str(ls) => override_service = Some(ls),
+                    _ => panic!("`service` attribute must be a string, e.g. service = \"foo\""),
+                }
+            }
+        }
+    }
 
+    // 2. Parse the impl block
+    let input_impl = parse_macro_input!(item as ItemImpl);
+
+    // 3. Determine the service name literal
+    let service_lit = if let Some(s) = override_service {
+        s
+    } else if let Some((_, ref trait_path, _)) = input_impl.trait_ {
+        // Trait impl: use the trait’s last segment
+        let trait_ident = &trait_path.segments.last().unwrap().ident;
+        LitStr::new(&trait_ident.to_string().to_lowercase(), trait_ident.span())
+    } else {
+        // Inherent impl: use the type’s last segment
+        let ty_name = if let Type::Path(type_path) = &*input_impl.self_ty {
+            type_path.path.segments.last().unwrap().ident.to_string()
+        } else {
+            panic!("`#[commands]` only supports impls on simple path types");
+        };
+        LitStr::new(&ty_name.to_lowercase(), input_impl.self_ty.span())
+    };
+
+    // 4. Build one wrapper per method
     let mut wrappers = Vec::new();
     for item in &input_impl.items {
         if let ImplItem::Method(m) = item {
             let method_ident = &m.sig.ident;
-            let wrapper_ident = format_ident!("__cmd_{}_{}", trait_name, method_ident);
-            let cmd_name = format!("{}/{}", trait_name, method_ident);
+            let wrapper_ident = format_ident!("__cmd_{}_{}", service_lit.value(), method_ident);
+            // final command name: "<service>/<method>"
+            let cmd_name = LitStr::new(
+                &format!("{}/{}", service_lit.value(), method_ident),
+                method_ident.span(),
+            );
 
-            // detect arguments
+            // detect if there’s a single typed argument
             let mut has_arg = false;
             let mut arg_ty: Type = parse_quote!(serde_json::Value);
             for input in &m.sig.inputs {
@@ -173,12 +212,13 @@ pub fn commands(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
 
-            // detect return
+            // detect return type
             let ret_ty: Type = match &m.sig.output {
                 ReturnType::Default => parse_quote!(()),
                 ReturnType::Type(_, ty) => (*ty.clone()),
             };
 
+            // generate wrapper
             let wrapper = if m.sig.asyncness.is_some() {
                 if has_arg {
                     quote! {
@@ -217,6 +257,7 @@ pub fn commands(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
+    // 5. Re-emit the original impl plus all wrappers
     let expanded = quote! {
         #input_impl
         #(#wrappers)*
