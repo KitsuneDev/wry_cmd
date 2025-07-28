@@ -48,5 +48,7 @@
 //! const reply = await res.json(); // { message: "Hello, Alice!" }
 //! ```
 pub use wry_cmd_core::*;
+#[cfg(feature = "docs")]
+pub use wry_cmd_docs::*;
 #[cfg(feature = "macros")]
 pub use wry_cmd_macro::*;
